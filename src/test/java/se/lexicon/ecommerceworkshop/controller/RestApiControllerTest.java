@@ -12,7 +12,9 @@ import se.lexicon.ecommerceworkshop.entity.Category;
 import se.lexicon.ecommerceworkshop.entity.Customer;
 import se.lexicon.ecommerceworkshop.repository.CategoryRepository;
 import se.lexicon.ecommerceworkshop.repository.CustomerRepository;
+import se.lexicon.ecommerceworkshop.repository.ProductRepository;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -33,6 +35,9 @@ class RestApiControllerTest {
 
     @Autowired
     private CategoryRepository categoryRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     @Test
     void shouldRegisterFindAndUpdateCustomer() throws Exception {
@@ -125,5 +130,74 @@ class RestApiControllerTest {
         mockMvc.perform(get("/api/v1/customers/999999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    void shouldCreateAndListCategories() throws Exception {
+        mockMvc.perform(post("/api/v1/categories")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"Games\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Games"));
+
+        mockMvc.perform(get("/api/v1/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", hasItem("Games")));
+    }
+
+    @Test
+    void shouldPlaceAnOrder() throws Exception {
+        String customerJson = """
+                {
+                  "firstName": "Omar",
+                  "lastName": "Saleh",
+                  "email": "omar.order@example.com",
+                  "password": "secret12",
+                  "street": "Order Street 5",
+                  "city": "Stockholm",
+                  "zipCode": "11223"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/customers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(customerJson))
+                .andExpect(status().isCreated());
+
+        Customer customer = customerRepository.findByEmail("omar.order@example.com")
+                .orElseThrow();
+        Long productId = productRepository.findByNameContainingIgnoreCase("Wireless")
+                .getFirst()
+                .getId();
+
+        String orderJson = """
+                {
+                  "customerId": %d,
+                  "items": [
+                    {
+                      "productId": %d,
+                      "quantity": 2
+                    }
+                  ]
+                }
+                """.formatted(customer.getId(), productId);
+
+        mockMvc.perform(post("/api/v1/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("CREATED"))
+                .andExpect(jsonPath("$.customerId").value(customer.getId()))
+                .andExpect(jsonPath("$.items[0].quantity").value(2));
+    }
+
+    @Test
+    void shouldExposeSwaggerDocumentation() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("E-commerce API"));
+
+        mockMvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().is3xxRedirection());
     }
 }
